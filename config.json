@@ -1,0 +1,10 @@
+{
+  "config_version": 5,
+  "default_background_color": "#202020",
+  "deck_colors": {},
+  "disabled_selected_decks": [],
+  "badge_bottom": 72,
+  "badge_right": 14,
+  "button_gap": 6,
+  "badge_max_width": 240
+}
