@@ -40,7 +40,7 @@ When studying `Animals::Mammals`, cards from `Cats` and `Dogs` show `Cats` and `
 
 ## Installation
 
-1. Download `direct-subdeck-badge.ankiaddon` from the repository's Releases page, or build it from source as described below.
+1. Build `direct-subdeck-badge.ankiaddon` from source as described below, or download it from the repository's Releases page when a packaged release is available.
 2. In Anki Desktop, select **Tools > Add-ons**.
 3. Click **Install from file...** and select the `.ankiaddon` file.
 4. Restart Anki when prompted.
