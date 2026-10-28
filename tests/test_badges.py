@@ -111,11 +111,12 @@ class BadgeTests(unittest.TestCase):
             self.badge._update_ui()
             self.badge.new_badge.setVisible.assert_called_with(True)
             self.badge.toggle_button.setText.assert_called_with("Show")
+            self.badge.depth_button.setVisible.assert_called_with(False)
             self.badge.config["disabled_selected_decks"] = []
             self.badge._card_deck_name = lambda: "Animals"
             self.badge._update_ui()
             self.badge.new_badge.hide.assert_not_called()
-            self.badge.depth_button.show.assert_called()
+            self.badge.depth_button.setVisible.assert_called_with(True)
             window.reviewer.card.type = 1
             self.badge._update_ui()
             self.badge.new_badge.setVisible.assert_called_with(False)

@@ -52,8 +52,8 @@ These examples use the default depth of one level. When studying `Animals::Mamma
 Study a deck that contains subdecks. When the current card belongs to a nested deck, the badge and a `Hide` button appear near the bottom-right of the reviewer window.
 
 - Click any deck badge to choose its color. The choice is saved for that deck's full path.
-- Click `Hide` to disable badges for the currently selected study deck.
-- Click `Show` to re-enable them.
+- Click `Hide` to hide deck badges and the Depth control for the currently selected study deck.
+- Click `Show` to restore them.
 
 Cards directly inside the selected study deck do not show a badge.
 

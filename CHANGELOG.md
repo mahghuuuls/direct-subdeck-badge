@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.2.1 - 2026-10-28
+
+- Hide the Depth control when deck badges are hidden; Show restores it alongside the badges.
+
 ## 1.2.0 - 2026-10-28
 
 - Display each subdeck level as its own clickable badge, with colors saved by full deck path.

@@ -279,9 +279,9 @@ class DirectSubdeckBadge(QObject):
 
         self.new_badge.setVisible(self._card_is_new())
         self.depth_button.setText(f"Depth: {self._depth_for_selected_deck(selected)}")
-        self.depth_button.show()
 
         disabled = self._selected_deck_is_disabled(selected)
+        self.depth_button.setVisible(not disabled)
         self._hide_deck_badges()
 
         if disabled:
