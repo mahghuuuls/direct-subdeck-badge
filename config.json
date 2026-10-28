@@ -1,5 +1,7 @@
 {
-  "config_version": 5,
+  "config_version": 6,
+  "selected_deck_depths": {},
+  "new_badge_left": 14,
   "default_background_color": "#202020",
   "deck_colors": {},
   "disabled_selected_decks": [],

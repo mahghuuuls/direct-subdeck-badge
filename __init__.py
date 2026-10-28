@@ -24,6 +24,8 @@ from aqt.qt import (
     QColorDialog,
     QEvent,
     QObject,
+    QInputDialog,
+    QLabel,
     QPushButton,
     QTimer,
     Qt,
@@ -31,13 +33,15 @@ from aqt.qt import (
 
 
 ADDON_NAME = "Direct Subdeck Badge"
-CONFIG_VERSION = 5
+CONFIG_VERSION = 6
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "config_version": CONFIG_VERSION,
     "default_background_color": "#202020",
     "deck_colors": {},
     "disabled_selected_decks": [],
+    "selected_deck_depths": {},
+    "new_badge_left": 14,
     "badge_bottom": 72,
     "badge_right": 14,
     "button_gap": 6,
@@ -87,6 +91,8 @@ class DirectSubdeckBadge(QObject):
         self.badge_button.setToolTip("Click to choose a color for this deck badge")
         self.badge_button.clicked.connect(self._choose_color_for_current_badge)
         self.badge_button.hide()
+        self.deck_badges = [self.badge_button]
+        self.visible_deck_badges = []
 
         self.toggle_button = QPushButton(mw)
         self.toggle_button.setObjectName("DirectSubdeckBadgeToggleButton")
@@ -97,12 +103,25 @@ class DirectSubdeckBadge(QObject):
 
         self._style_toggle_button()
 
+        self.depth_button = QPushButton(mw)
+        self.depth_button.setCursor(_pointing_hand_cursor())
+        self.depth_button.setToolTip("Choose how many subdeck levels to show for this study deck")
+        self.depth_button.clicked.connect(self._choose_depth)
+        self.depth_button.hide()
+
+        self.new_badge = QLabel("New", mw)
+        self.new_badge.setToolTip("This card is new (not yet in learning or review)")
+        self.new_badge.setStyleSheet(
+            "background-color: #1976d2; color: white; border-radius: 7px;"
+            "padding: 4px 10px; font-weight: 600;"
+        )
+        self.new_badge.hide()
+
         mw.installEventFilter(self)
 
         gui_hooks.reviewer_did_show_question.append(self._schedule_update)
         gui_hooks.reviewer_did_show_answer.append(self._schedule_update)
         gui_hooks.state_did_change.append(self._schedule_update)
-        gui_hooks.deck_browser_will_show.append(self._schedule_update)
 
         self._schedule_update()
 
@@ -119,6 +138,8 @@ class DirectSubdeckBadge(QObject):
             config["deck_colors"] = {}
         if not isinstance(config.get("disabled_selected_decks"), list):
             config["disabled_selected_decks"] = []
+        if not isinstance(config.get("selected_deck_depths"), dict):
+            config["selected_deck_depths"] = {}
 
         # Lightweight migration for older versions that used a top position.
         # Once the bottom-right layout exists, old top coordinates are ignored.
@@ -205,9 +226,35 @@ class DirectSubdeckBadge(QObject):
         if not relative:
             return selected, None, None
 
-        child_label = relative.split("::", 1)[0]
-        child_path = prefix + child_label
+        parts = relative.split("::")
+        child_label = "::".join(parts[:self._depth_for_selected_deck(selected)])
+        # Keep existing colors tied to the direct child, regardless of display depth.
+        child_path = prefix + parts[0]
         return selected, child_path, child_label
+
+    def _depth_for_selected_deck(self, selected: str) -> int:
+        try:
+            return max(1, int(self.config["selected_deck_depths"].get(selected, 1)))
+        except (TypeError, ValueError, OverflowError):
+            return 1
+
+    def _display_decks(self, selected: str, label: str):
+        path = selected
+        result = []
+        for name in label.split("::"):
+            path += "::" + name
+            result.append((path, name))
+        return result
+
+    def _hide_deck_badges(self) -> None:
+        for button in self.deck_badges:
+            button.hide()
+        self.visible_deck_badges = []
+
+    def _card_is_new(self) -> bool:
+        card = getattr(getattr(mw, "reviewer", None), "card", None)
+        # Anki card type 0 is new; learning/relearning and review have other types.
+        return card is not None and getattr(card, "type", None) == 0
 
     # ------------------------------------------------------------------
     # UI update
@@ -230,7 +277,12 @@ class DirectSubdeckBadge(QObject):
             self._hide_all()
             return
 
+        self.new_badge.setVisible(self._card_is_new())
+        self.depth_button.setText(f"Depth: {self._depth_for_selected_deck(selected)}")
+        self.depth_button.show()
+
         disabled = self._selected_deck_is_disabled(selected)
+        self._hide_deck_badges()
 
         if disabled:
             self.badge_button.hide()
@@ -240,12 +292,31 @@ class DirectSubdeckBadge(QObject):
             return
 
         if not child_path or not child_label:
-            self._hide_all()
+            self.badge_button.hide()
+            self.toggle_button.hide()
+            self._position_widgets(show_badge=False)
             return
 
-        self.badge_button.setText(_shorten_label(child_label))
-        self._style_badge_button(child_path)
-        self.badge_button.show()
+        for index, (path, name) in enumerate(self._display_decks(selected, child_label)):
+            if index == len(self.deck_badges):
+                button = QPushButton(mw)
+                button.setObjectName("DirectSubdeckBadgeButton")
+                button.setCursor(_pointing_hand_cursor())
+                self.deck_badges.append(button)
+            button = self.deck_badges[index]
+            # Reconnect reused buttons so each click targets the current full path.
+            try:
+                button.clicked.disconnect()
+            except TypeError:
+                pass  # Newly created buttons have no connection yet.
+            button.clicked.connect(
+                lambda checked=False, path=path, name=name: self._choose_deck_color(path, name)
+            )
+            button.setText(_shorten_label(name))
+            button.setToolTip(f"{path}\nClick to choose this deck's color")
+            self._style_badge_button(path, button)
+            button.show()
+            self.visible_deck_badges.append(button)
 
         self.toggle_button.setText("Hide")
         self.toggle_button.show()
@@ -255,8 +326,11 @@ class DirectSubdeckBadge(QObject):
         self.toggle_button.raise_()
 
     def _hide_all(self) -> None:
+        self._hide_deck_badges()
         self.badge_button.hide()
         self.toggle_button.hide()
+        self.depth_button.hide()
+        self.new_badge.hide()
 
     def _selected_deck_is_disabled(self, selected_deck: str) -> bool:
         disabled = self.config.get("disabled_selected_decks", [])
@@ -266,12 +340,12 @@ class DirectSubdeckBadge(QObject):
     # Styling and positioning
     # ------------------------------------------------------------------
 
-    def _style_badge_button(self, child_path: str) -> None:
+    def _style_badge_button(self, child_path: str, button=None) -> None:
         colors = self.config.get("deck_colors", {})
         background = colors.get(child_path, self.config.get("default_background_color", "#202020"))
         text_color = _readable_text_color(background)
 
-        self.badge_button.setStyleSheet(
+        (button if button is not None else self.badge_button).setStyleSheet(
             f"""
             QPushButton#DirectSubdeckBadgeButton {{
                 background-color: {background};
@@ -320,12 +394,33 @@ class DirectSubdeckBadge(QObject):
         toggle_x = max(0, window_width - right - toggle_width)
         self.toggle_button.setGeometry(toggle_x, y, toggle_width, toggle_height)
 
+        self.depth_button.adjustSize()
+        depth_width = self.depth_button.sizeHint().width()
+        depth_x = max(0, toggle_x - gap - depth_width) if not self.toggle_button.isHidden() else max(0, window_width - right - depth_width)
+        self.depth_button.setGeometry(depth_x, y, depth_width, toggle_height)
+        self.depth_button.raise_()
+
+        self.new_badge.adjustSize()
+        self.new_badge.move(max(0, int(self.config.get("new_badge_left", 14))), y)
+        self.new_badge.raise_()
+
         if show_badge:
-            self.badge_button.adjustSize()
-            badge_width = min(max(self.badge_button.sizeHint().width(), 80), max_badge_width)
-            badge_height = toggle_height
-            badge_x = max(0, toggle_x - gap - badge_width)
-            self.badge_button.setGeometry(badge_x, y, badge_width, badge_height)
+            # Pack rows right-to-left, retaining parent-to-child reading order.
+            left = max(0, int(self.config.get("new_badge_left", 14)))
+            if not self.new_badge.isHidden():
+                left += self.new_badge.width() + gap
+            edge = depth_x - gap
+            row_y = y
+            for button in reversed(self.visible_deck_badges):
+                button.adjustSize()
+                width = min(max(button.sizeHint().width(), 80), max_badge_width)
+                width = max(1, min(width, window_width - right - left))
+                if edge - width < left:
+                    row_y -= toggle_height + gap
+                    edge = window_width - right
+                button.setGeometry(max(left, edge - width), max(0, row_y), width, toggle_height)
+                button.raise_()
+                edge -= width + gap
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt naming convention
         if obj is mw:
@@ -346,26 +441,43 @@ class DirectSubdeckBadge(QObject):
     # User actions
     # ------------------------------------------------------------------
 
+    def _choose_depth(self) -> None:
+        selected = self.current_selected_deck
+        if not selected:
+            return
+        depth, accepted = QInputDialog.getInt(
+            mw, "Subdeck display depth", f"Subdeck levels to show under {selected}:",
+            min(self._depth_for_selected_deck(selected), 100), 1, 100, 1,
+        )
+        if accepted:
+            self.config["selected_deck_depths"][selected] = depth
+            self._save_config()
+            self._update_ui()
+
     def _choose_color_for_current_badge(self) -> None:
         if not self.current_child_deck_path:
             return
 
+        self._choose_deck_color(self.current_child_deck_path, self.current_child_label)
+
+    def _choose_deck_color(self, path: str, label: str) -> None:
+
         colors = self.config.setdefault("deck_colors", {})
         current_color = colors.get(
-            self.current_child_deck_path,
+            path,
             self.config.get("default_background_color", "#202020"),
         )
 
         chosen = QColorDialog.getColor(
             QColor(current_color),
             mw,
-            f"Choose badge color for {self.current_child_label or self.current_child_deck_path}",
+            f"Choose badge color for {label or path}",
         )
 
         if not chosen.isValid():
             return
 
-        colors[self.current_child_deck_path] = chosen.name()
+        colors[path] = chosen.name()
         self._save_config()
         self._update_ui()
 
